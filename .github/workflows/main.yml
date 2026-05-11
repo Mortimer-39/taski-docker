@@ -60,4 +60,4 @@ jobs:
         with:
           context: ./backend/
           push: true
-          tags: mortimers
+          tags: mortimers/taski_backend:latest
