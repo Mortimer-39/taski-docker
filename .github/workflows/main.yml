@@ -8,7 +8,7 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
-      
+
     services:
       postgres:
         image: postgres:13.10
@@ -20,10 +20,10 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U django_user -d django_db"
-          --health-interval 10s   
+          --health-interval 10s
           --health-timeout 5s
-          --health-retries 5  
-        
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python
@@ -36,6 +36,23 @@ jobs:
           python -m pip install --upgrade pip setuptools
           pip install flake8==7.3.0 flake8-isort==7.0.0
           pip install -r ./backend/requirements.txt
+
+      - name: Run flake8
+        run: flake8 backend
+
+      - name: Run Django tests
+        env:
+          POSTGRES_DB: django_db
+          POSTGRES_USER: django_user
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DB_HOST: localhost
+          DB_PORT: 5432
+          SECRET_KEY: test-secret-key
+          DEBUG: 'False'
+          ALLOWED_HOSTS: '*'
+        run: |
+          cd backend
+          python manage.py test
 
   # ==================== BACKEND ====================
   build_and_push_to_docker_hub:
@@ -81,7 +98,7 @@ jobs:
       - name: Test frontend
         run: |
           cd frontend/
-          npm run test
+          npm run test -- --watchAll=false
 
   build_frontend_and_push_to_docker_hub:
     name: Push frontend to DockerHub
@@ -144,7 +161,7 @@ jobs:
 
       # Копируем docker-compose.production.yml на сервер
       - name: Copy docker-compose.yml via ssh
-        uses: appleboy/scp-action@master
+        uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USER }}
@@ -152,21 +169,51 @@ jobs:
           source: "docker-compose.production.yml"
           target: "taski"
 
+      # Создаём/обновляем ~/taski/.env на основе GitHub Secrets
+      - name: Render .env on server
+        uses: appleboy/ssh-action@v1
+        env:
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DEBUG: ${{ secrets.DEBUG }}
+          ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,SECRET_KEY,DEBUG,ALLOWED_HOSTS
+          script: |
+            set -e
+            cd ~/taski
+            cat > .env <<EOF
+            POSTGRES_DB=${POSTGRES_DB}
+            POSTGRES_USER=${POSTGRES_USER}
+            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            DB_HOST=db
+            DB_PORT=5432
+            SECRET_KEY=${SECRET_KEY}
+            DEBUG=${DEBUG}
+            ALLOWED_HOSTS=${ALLOWED_HOSTS}
+            EOF
+
       # Выполняем команды на сервере
       - name: Executing remote ssh commands to deploy
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            cd taski
+            set -e
+            cd ~/taski
             sudo docker compose -f docker-compose.production.yml pull
-            sudo docker compose -f docker-compose.production.yml down
             sudo docker compose -f docker-compose.production.yml up -d
-            sudo docker compose -f docker-compose.production.yml exec backend python manage.py migrate
-            sudo docker compose -f docker-compose.production.yml exec backend python manage.py collectstatic
-            sudo docker compose -f docker-compose.production.yml exec backend cp -r /app/collected_static/. /backend_static/static/
+            sudo docker compose -f docker-compose.production.yml exec -T backend python manage.py migrate --noinput
+            sudo docker compose -f docker-compose.production.yml exec -T backend python manage.py collectstatic --noinput
+            sudo docker compose -f docker-compose.production.yml exec -T backend sh -c 'mkdir -p /backend_static/static && cp -r /app/backend/collected_static/. /backend_static/static/'
+            sudo docker compose -f docker-compose.production.yml ps
 
  # ==================== DEPLOY ON telegram bot ====================
   send_message:
