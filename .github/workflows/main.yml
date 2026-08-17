@@ -212,7 +212,7 @@ jobs:
             sudo docker compose -f docker-compose.production.yml up -d
             sudo docker compose -f docker-compose.production.yml exec -T backend python manage.py migrate --noinput
             sudo docker compose -f docker-compose.production.yml exec -T backend python manage.py collectstatic --noinput
-            sudo docker compose -f docker-compose.production.yml exec -T backend sh -c 'mkdir -p /backend_static/static && cp -r /app/backend/collected_static/. /backend_static/static/'
+            sudo docker compose -f docker-compose.production.yml exec -T backend sh -c 'mkdir -p /backend_static/static && cp -r /app/collected_static/. /backend_static/static/'
             sudo docker compose -f docker-compose.production.yml ps
 
  # ==================== DEPLOY ON telegram bot ====================
