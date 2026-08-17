@@ -31,6 +31,8 @@ services:
       - static_volume:/frontend_static
   gateway:
     image: mortimers/taski_gateway  # Качаем с Docker Hub
+    depends_on:
+      - backend
     volumes:
       - static_volume:/staticfiles/
     ports:
